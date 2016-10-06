@@ -2,7 +2,8 @@
   (:require [com.stuartsierra.component :as component]
             [onyx.static.planning :as planning]
             [onyx.static.uuid :refer [random-uuid]]
-            [onyx.lambda.system :as lambda.system]))
+            [onyx.lambda.system :as lambda.system]
+            [onyx.lambda.extensions :as lambda.extensions]))
 
 ;; ;; Following copied from onyx.api, which requires excluded dependencies (e.g. ZK) ...
 ;; (defn ^{:no-doc true} saturation [catalog]
@@ -113,14 +114,33 @@
           :onyx.lambda/lambda-request lambda-request}]]
     (into [lambda-request-lifecycle] lifecycles)))
 
-(defn match-task [catalog lambda-request]
-  )
+(defmethod lambda.extensions/parse-arn :scheduled-event
+  [_ lambda-request]
+  (->> lambda-request :body :resources first))
 
-(defn run-task [peer-config job lambda-request]
-  (let [job (-> job 
-                (update-in [:metadata :job-id] #(or % (random-uuid))))
-        id (get-in job [:metadata :job-id])
-        tasks (planning/discover-tasks (:catalog job) (:workflow job))
-        task-map (match-task (:catalog job) lambda-request)]
-    (component/start
-     (lambda.system/onyx-lambda-task peer-config job task-map lambda-request))))
+(defmethod lambda.extensions/parse-arn :dynamodb-update
+  [_ lambda-request]
+  (->> lambda-request :body :Records (map :eventSourceARN) first))
+
+(defn match-task
+  [{:keys [lambda/known-event-sources] :as peer-config} catalog lambda-request]
+  (when-let [arn (some #(lambda.extensions/parse-arn % lambda-request)
+                  known-event-sources)]
+    (some (fn [task-map]
+            (when (= arn (or (:lambda/event-source-arn task-map)
+                             (:lambda/stream-arn task-map)))
+              task-map))
+          catalog)))
+
+(defn lambda-task
+  [peer-config {:keys [catalog workflow] :as job} lambda-request]
+  (let [job-id (-> lambda-request :context :aws-request-id)
+        job (assoc-in job [:metadata :job-id] job-id)
+        tasks (planning/discover-tasks catalog workflow)]
+    (when-let [task-map (match-task peer-config catalog lambda-request)]
+      (let [task (some #(when (= (:onyx/name task-map) (:name %)) %) tasks)]
+        (component/start (lambda.system/onyx-lambda-task peer-config
+                                                         job
+                                                         task
+                                                         task-map
+                                                         lambda-request))))))
