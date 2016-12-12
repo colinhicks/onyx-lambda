@@ -39,6 +39,15 @@
           :lambda/stream-arn "arn:aws:dynamodb:us-east1:...table/my-c"
           :onyx/fn ::some-transform}]
         job {:catalog catalog
-             :workflow workflow}]
-    (api/lambda-task peer-config job lambda-request))
-  )
+             :workflow workflow}
+        lambda-task (api/lambda-task peer-config job lambda-request)]
+    (is (= :a
+           (get-in lambda-task [:task-information :task :name])))
+    
+    (is (= {:lifecycle/task :all
+            :lifecycle/calls :onyx.plugin.lambda/lifecycle-calls
+            :lambda/lambda-request lambda-request}
+           (first (get-in lambda-task [:task-information :lifecycles]))))
+
+    (is (= lambda-request
+           (get-in lambda-task [:task-lifecycle :state :init-event :lambda/lambda-request])))))

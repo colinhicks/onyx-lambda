@@ -1,10 +1,12 @@
 (ns onyx.plugin.lambda
   (:require [onyx.plugin.onyx-plugin :as onyx-plugin]
-            [onyx.plugin.onyx-input :as onyx-input]))
+            [onyx.plugin.onyx-input :as onyx-input]
+            [onyx.lambda.extensions :as lambda.extensions]))
 
 (defn parse-input [event]
-  (let [lambda-request (:lambda/lambda-request event)]
-    []))
+  (let [lambda-request (:lambda/lambda-request event)
+        event-source (get-in event [:task-map :lambda/event-source])]
+    (lambda.extensions/lambda-request-segments event-source lambda-request)))
 
 (defrecord LambdaInputReader [event sequential rst segment offset]
   onyx-plugin/OnyxPlugin
@@ -50,3 +52,9 @@
 
 (defn input [event]
   (map->LambdaInputReader {:event event}))
+
+(defn inject-lambda-request [event {:keys [lambda/lambda-request]}]
+  {:lambda/lambda-request lambda-request})
+
+(def lifecycle-calls
+  {:lifecycle/before-task-start inject-lambda-request})

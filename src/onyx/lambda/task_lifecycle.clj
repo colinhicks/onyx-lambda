@@ -207,6 +207,8 @@
                           :messenger messenger
                           :coordinator coordinator ;;nil
                           :pipeline (peer.task-lifecycle/build-pipeline task-map event)
+                          :barriers {}
+                          :exhausted? false
                           :init-event event
                           :event event})]
       (assoc component
